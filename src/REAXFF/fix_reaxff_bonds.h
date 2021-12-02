@@ -42,7 +42,7 @@ class FixReaxFFBonds : public Fix {
   //RS end 
 
  protected:
-  int me, nprocs, nmax, ntypes, maxsize;
+  int me, nprocs, nmax, ntypes, maxsize, compressed;
   int *numneigh;
   tagint **neighid;
   double **abo;
