@@ -39,9 +39,7 @@ class FixACKS2Gauss : public FixQEqGauss {
   int last_rows_rank, last_rows_flag;
 
   double **s_hist_X, **s_hist_last;
-  double ***Xij;    // acks2 parameters
-  double *Xij_flat;
-
+  double *Xij;    // acks2 parameters
   sparse_matrix X;
   double *Xdia_inv;
   double *X_diag;

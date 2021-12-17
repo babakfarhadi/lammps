@@ -118,15 +118,14 @@ void FixACKS2Gauss::pertype_parameters(char *arg)
   memory->create(eta,ntypes+1,"acsk2/gauss:eta");
   memory->create(zeta,ntypes+1,"acks2/gauss:zeta");
   memory->create(zcore,ntypes+1,"acks2/gauss:zcore");
-  memory->create(Xij,ntypes+1,ntypes+1,4,"acks2:Xij");
-  memory->create(Xij_flat,(ntypes+1)*(ntypes+1)*4,"acks2:Xij_flat");
+  memory->create(Xij,(ntypes+1)*(ntypes+1)*4,"acks2:Xij_flat");
 
   if (comm->me == 0) {
     chi[0] = eta[0] = zeta[0] = zcore[0] = 0.0;
-    for (int i = 0; i <= ntypes; i++)
-      for (int j = 0; j <= 3; j++)
-        Xij[0][i][j] = Xij[i][0][j] = 0.0;
-
+    for (int n = 0; n <= 3; n++)
+      for (int i = 0; i <= ntypes; i++)
+        for (int j = 0; j <= ntypes; j++)
+          Xij[i*(ntypes+1)*4+j*4+n] = Xij[j*(ntypes+1)*4+i*4+n] = 0.0;
     try {
       TextFileReader reader(arg,"acks2/gauss parameter");
       reader.ignore_comments = false;
@@ -161,8 +160,9 @@ void FixACKS2Gauss::pertype_parameters(char *arg)
           throw TokenizerException("Fix acks2/gauss: invalid atom type in parameter file",
                                    std::to_string(itype));
 
+        n = 0;
         for (int n = 0; n <= 3; n++)
-          Xij[itype][jtype][n] = Xij[jtype][itype][n] = values.next_double();
+          Xij[itype*(ntypes+1)*4+jtype*4+n] = Xij[jtype*(ntypes+1)*4+itype*4+n] = values.next_double();
       }
     } catch (std::exception &e) {
       error->one(FLERR,e.what());
@@ -173,7 +173,7 @@ void FixACKS2Gauss::pertype_parameters(char *arg)
   MPI_Bcast(eta,ntypes+1,MPI_DOUBLE,0,world);
   MPI_Bcast(zeta,ntypes+1,MPI_DOUBLE,0,world);
   MPI_Bcast(zcore,ntypes+1,MPI_DOUBLE,0,world);
-  MPI_Bcast(&Xij[0][0][0],(ntypes+1)*(ntypes+1)*4,MPI_DOUBLE,0,world);
+  MPI_Bcast(Xij,(ntypes+1)*(ntypes+1)*4,MPI_DOUBLE,0,world);
 
   // DEBUG BABAK
 
@@ -378,6 +378,7 @@ void FixACKS2Gauss::compute_X()
   int jnum;
   int i, j, ii, jj, itype, jtype, moli, molj, flag;
   double dx, dy, dz, r_sqr, c1, c2, X_val;
+  const int ntypes = atom->ntypes;
   const double SMALL = 0.0001;
 
   int *type = atom->type;
@@ -429,13 +430,13 @@ void FixACKS2Gauss::compute_X()
             X.jlist[m_fill] = j;
             if (moli == molj) {
 
-              c1 = Xij[itype][jtype][0];
-              c2 = Xij[itype][jtype][1];
+              c1 = Xij[itype*(ntypes+1)*4+jtype*4+0];
+              c2 = Xij[itype*(ntypes+1)*4+jtype*4+1];
               X_val = calculate_X_bonded(sqrt(r_sqr), c1, c2);
             }
             else {
-              c1 = Xij[itype][jtype][2];
-              c2 = Xij[itype][jtype][3];
+              c1 = Xij[itype*(ntypes+1)*4+jtype*4+2];
+              c2 = Xij[itype*(ntypes+1)*4+jtype*4+3];
               X_val = calculate_X_nonbonded(sqrt(r_sqr), c1, c2);
             }
             X.val[m_fill] = X_val;
