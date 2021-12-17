@@ -26,12 +26,12 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(qeq/gauss,FixQEqGauss);
+FixStyle(qeq/gauss_new,FixQEqGaussNew);
 // clang-format on
 #else
 
-#ifndef LMP_FIX_QEQ_GAUSS_H
-#define LMP_FIX_QEQ_GAUSS_H
+#ifndef LMP_FIX_QEQ_GAUSS_NEW_H
+#define LMP_FIX_QEQ_GAUSS_NEW_H
 
 #include "fix.h"
 
@@ -43,10 +43,10 @@ FixStyle(qeq/gauss,FixQEqGauss);
 
 namespace LAMMPS_NS {
 
-class FixQEqGauss : public Fix {
+class FixQEqGaussNew : public Fix {
  public:
-  FixQEqGauss(class LAMMPS *, int, char **);
-  ~FixQEqGauss();
+  FixQEqGaussNew(class LAMMPS *, int, char **);
+  ~FixQEqGaussNew();
   int setmask();
   virtual void post_constructor();
   virtual void init();

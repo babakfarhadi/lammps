@@ -111,6 +111,8 @@ class Modify : protected Pointers {
 
   // deprecated API
   int find_fix(const std::string &);
+  // BABAK: further deprecated API needed for dump_mfp5
+  int find_fix_by_style(const char *);
   // new API
   Fix *get_fix_by_id(const std::string &) const;
   Fix *get_fix_by_index(int idx) const { return fix[idx]; }

@@ -13,22 +13,21 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(acks2/reax,FixACKS2ReaxFF);
-FixStyle(acks2/reaxff,FixACKS2ReaxFF);
+FixStyle(acks2/gauss,FixACKS2Gauss);
 // clang-format on
 #else
 
-#ifndef LMP_FIX_ACKS2_REAXFF_H
-#define LMP_FIX_ACKS2_REAXFF_H
+#ifndef LMP_FIX_ACKS2_GAUSS_H
+#define LMP_FIX_ACKS2_GAUSS_H
 
-#include "fix_qeq_reaxff.h"
+#include "fix_qeq_gauss.h"
 
 namespace LAMMPS_NS {
 
-class FixACKS2ReaxFF : public FixQEqReaxFF {
+class FixACKS2Gauss : public FixQEqGauss {
  public:
-  FixACKS2ReaxFF(class LAMMPS *, int, char **);
-  virtual ~FixACKS2ReaxFF();
+  FixACKS2Gauss(class LAMMPS *, int, char **);
+  virtual ~FixACKS2Gauss();
   void post_constructor();
   virtual void init();
   void init_storage();
@@ -40,7 +39,8 @@ class FixACKS2ReaxFF : public FixQEqReaxFF {
   int last_rows_rank, last_rows_flag;
 
   double **s_hist_X, **s_hist_last;
-  double *bcut_acks2, bond_softness, **bcut;    // acks2 parameters
+  double ***Xij;    // acks2 parameters
+  double *Xij_flat;
 
   sparse_matrix X;
   double *Xdia_inv;
@@ -49,9 +49,7 @@ class FixACKS2ReaxFF : public FixQEqReaxFF {
   //BiCGStab storage
   double *g, *q_hat, *r_hat, *y, *z;
 
-  char *Xij_file;
   void pertype_parameters(char *);
-  void init_bondcut();
   void allocate_storage();
   void deallocate_storage();
   void allocate_matrix();
@@ -59,7 +57,8 @@ class FixACKS2ReaxFF : public FixQEqReaxFF {
 
   void init_matvec();
   void compute_X();
-  double calculate_X(double, double);
+  double calculate_X_bonded(double, double, double);
+  double calculate_X_nonbonded(double, double, double);
   void calculate_Q();
 
   int BiCGStab(double *, double *);

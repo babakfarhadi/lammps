@@ -13,22 +13,21 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(acks2/reax,FixACKS2ReaxFF);
-FixStyle(acks2/reaxff,FixACKS2ReaxFF);
+FixStyle(acks2/gauss,FixACKS2Gauss);
 // clang-format on
 #else
 
-#ifndef LMP_FIX_ACKS2_REAXFF_H
-#define LMP_FIX_ACKS2_REAXFF_H
+#ifndef LMP_FIX_ACKS2_GAUSS_H
+#define LMP_FIX_ACKS2_GAUSS_H
 
-#include "fix_qeq_reaxff.h"
+#include "fix_qeq_gauss.h"
 
 namespace LAMMPS_NS {
 
-class FixACKS2ReaxFF : public FixQEqReaxFF {
+class FixACKS2Gauss : public FixQEqGauss {
  public:
   FixACKS2ReaxFF(class LAMMPS *, int, char **);
-  virtual ~FixACKS2ReaxFF();
+  virtual ~FixACKS2Gauss();
   void post_constructor();
   virtual void init();
   void init_storage();
@@ -49,7 +48,6 @@ class FixACKS2ReaxFF : public FixQEqReaxFF {
   //BiCGStab storage
   double *g, *q_hat, *r_hat, *y, *z;
 
-  char *Xij_file;
   void pertype_parameters(char *);
   void init_bondcut();
   void allocate_storage();

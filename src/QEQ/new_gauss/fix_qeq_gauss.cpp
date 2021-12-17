@@ -41,6 +41,8 @@
 #include "text_file_reader.h"
 #include "update.h"
 
+#include "pair_reaxff.h"
+#include "reaxff_api.h"
 #include <cmath>
 #include <cstring>
 #include <exception>
@@ -100,7 +102,7 @@ FixQEqGauss::FixQEqGauss(LAMMPS *lmp, int narg, char **arg) :
 
   Hdia_inv = nullptr;
   b_s = nullptr;
-  chi_field = nullptr;
+  //chi_field = nullptr;
   b_t = nullptr;
   b_prc = nullptr;
   b_prm = nullptr;
@@ -170,8 +172,8 @@ void FixQEqGauss::post_constructor()
       s_hist[i][j] = t_hist[i][j] = 0;
 
   pertype_parameters(pertype_option);
-  if (dual_enabled)
-    error->all(FLERR,"Dual keyword only supported with fix qeq/gauss/omp");
+  //if (dual_enabled)
+  //  error->all(FLERR,"Dual keyword only supported with fix qeq/reaxff/omp");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -193,8 +195,8 @@ void FixQEqGauss::pertype_parameters(char *arg)
 
   memory->create(chi,ntypes+1,"qeq/gauss:chi");
   memory->create(eta,ntypes+1,"qeq/gauss:eta");
-  memory->create(zeta,ntypes+1,"qeq/gauss:zeta");
-  memory->create(zcore,ntypes+1,"qeq/gauss:zcore");
+  memory->create(zeta,ntypes+1,"qeq/gauss:gamma");
+  memory->create(zcore,ntypes+1,"qeq/gauss:gamma");
 
   if (comm->me == 0) {
     chi[0] = eta[0] = zeta[0] = zcore[0] = 0.0;
@@ -242,7 +244,7 @@ void FixQEqGauss::allocate_storage()
 
   memory->create(Hdia_inv,nmax,"qeq:Hdia_inv");
   memory->create(b_s,nmax,"qeq:b_s");
-  memory->create(chi_field,nmax,"qeq:chi_field");
+  //memory->create(chi_field,nmax,"qeq:chi_field");
   memory->create(b_t,nmax,"qeq:b_t");
   memory->create(b_prc,nmax,"qeq:b_prc");
   memory->create(b_prm,nmax,"qeq:b_prm");
@@ -269,7 +271,7 @@ void FixQEqGauss::deallocate_storage()
   memory->destroy(b_t);
   memory->destroy(b_prc);
   memory->destroy(b_prm);
-  memory->destroy(chi_field);
+  //memory->destroy(chi_field);
 
   memory->destroy(p);
   memory->destroy(q);
@@ -346,28 +348,28 @@ void FixQEqGauss::init()
   if (group->count(igroup) == 0)
     error->all(FLERR,"Fix {} group has no atoms", style);
 
-  // get pointer to fix efield if present. there may be at most one instance of fix efield in use.
-
-  efield = nullptr;
-  auto fixes = modify->get_fix_by_style("^efield");
-  if (fixes.size() == 1) efield = (FixEfield *) fixes.front();
-  else if (fixes.size() > 1)
-    error->all(FLERR, "There may be only one fix efield instance used with fix {}", style);
-
-  // ensure that fix efield is properly initialized before accessing its data and check some settings
-  if (efield) {
-    efield->init();
-    if (strcmp(update->unit_style,"real") != 0)
-      error->all(FLERR,"Must use unit_style real with fix {} and external fields", style);
-    if (efield->varflag != FixEfield::CONSTANT)
-      error->all(FLERR,"Cannot (yet) use fix {} with variable efield", style);
-
-    if (((fabs(efield->ex) > SMALL) && domain->xperiodic) ||
-         ((fabs(efield->ey) > SMALL) && domain->yperiodic) ||
-         ((fabs(efield->ez) > SMALL) && domain->zperiodic))
-      error->all(FLERR,"Must not have electric field component in direction of periodic "
-                       "boundary when using charge equilibration with ReaxFF.");
-  }
+//  // get pointer to fix efield if present. there may be at most one instance of fix efield in use.
+//
+//  efield = nullptr;
+//  auto fixes = modify->get_fix_by_style("^efield");
+//  if (fixes.size() == 1) efield = (FixEfield *) fixes.front();
+//  else if (fixes.size() > 1)
+//    error->all(FLERR, "There may be only one fix efield instance used with fix {}", style);
+//
+//  // ensure that fix efield is properly initialized before accessing its data and check some settings
+//  if (efield) {
+//    efield->init();
+//    if (strcmp(update->unit_style,"real") != 0)
+//      error->all(FLERR,"Must use unit_style real with fix {} and external fields", style);
+//    if (efield->varflag != FixEfield::CONSTANT)
+//      error->all(FLERR,"Cannot (yet) use fix {} with variable efield", style);
+//
+//    if (((fabs(efield->ex) > SMALL) && domain->xperiodic) ||
+//         ((fabs(efield->ey) > SMALL) && domain->yperiodic) ||
+//         ((fabs(efield->ez) > SMALL) && domain->zperiodic))
+//      error->all(FLERR,"Must not have electric field component in direction of periodic "
+//                       "boundary when using charge equilibration with ReaxFF.");
+//  }
 
   // we need a half neighbor list w/ Newton off and ghost neighbors
   // built whenever re-neighboring occurs
@@ -436,14 +438,14 @@ void FixQEqGauss::min_setup_pre_force(int vflag)
 
 void FixQEqGauss::init_storage()
 {
-  if (efield) get_chi_field();
+  //if (efield) get_chi_field();
 
   for (int ii = 0; ii < NN; ii++) {
     int i = ilist[ii];
     if (atom->mask[i] & groupbit) {
       Hdia_inv[i] = 1. / eta[atom->type[i]];
       b_s[i] = -chi[atom->type[i]];
-      if (efield) b_s[i] -= chi_field[i];
+      //if (efield) b_s[i] -= chi_field[i];
       b_t[i] = -1.0;
       b_prc[i] = 0;
       b_prm[i] = 0;
@@ -473,7 +475,7 @@ void FixQEqGauss::pre_force(int /*vflag*/)
   if (n > n_cap*DANGER_ZONE || m_fill > m_cap*DANGER_ZONE)
     reallocate_matrix();
 
-  if (efield) get_chi_field();
+  //if (efield) get_chi_field();
 
   init_matvec();
 
@@ -514,7 +516,7 @@ void FixQEqGauss::init_matvec()
       /* init pre-conditioner for H and init solution vectors */
       Hdia_inv[i] = 1. / eta[atom->type[i]];
       b_s[i]      = -chi[atom->type[i]];
-      if (efield) b_s[i] -= chi_field[i];
+      //if (efield) b_s[i] -= chi_field[i];
       b_t[i]      = -1.0;
 
       /* quadratic extrapolation for s & t from previous solutions */
@@ -536,12 +538,11 @@ void FixQEqGauss::init_matvec()
 void FixQEqGauss::compute_H()
 {
   int jnum;
-  int i, j, ii, jj, itype, jtype, flag;
-  double dx, dy, dz, r_sqr, zei, zej;
-  const double SMALL = 0.0001;
+  int i, j, ii, jj, itype, jtype;
+  double dx, dy, dz, r_sqr;
+  double zei, zej;
 
   int *type = atom->type;
-  tagint *tag = atom->tag;
   double **x = atom->x;
   int *mask = atom->mask;
 
@@ -560,45 +561,28 @@ void FixQEqGauss::compute_H()
       for (jj = 0; jj < jnum; jj++) {
         j = jlist[jj];
         j &= NEIGHMASK;
+
         jtype = type[j];
         zej = zeta[jtype];
-
         dx = x[j][0] - x[i][0];
         dy = x[j][1] - x[i][1];
         dz = x[j][2] - x[i][2];
         r_sqr = SQR(dx) + SQR(dy) + SQR(dz);
 
-        flag = 0;
-        // DEBUG BABAK
-        //printf("DEBUG i: %1d, j: %1d, r_sqr: %10.5f\n",i, j, r_sqr);
-        if (r_sqr <= cutoff_sq) {
-          if (j < atom->nlocal) flag = 1;
-          else if (tag[i] < tag[j]) flag = 1;
-          else if (tag[i] == tag[j]) {
-            if (dz > SMALL) flag = 1;
-            else if (fabs(dz) < SMALL) {
-              if (dy > SMALL) flag = 1;
-              else if (fabs(dy) < SMALL && dx > SMALL)
-                flag = 1;
-            }
-          }
-        }
-
-        if (flag) {
-          H.jlist[m_fill] = j;
-          H.val[m_fill] =  calculate_H_dsf(zei, zej, sqrt(r_sqr));
-          m_fill++;
-        }
+        if (r_sqr > cutoff_sq) continue;
+        
+        H.jlist[m_fill] = j;
+        H.val[m_fill] = calculate_H_dsf(zei, zej, sqrt(r_sqr));
+        m_fill++;
       }
       H.numnbrs[i] = m_fill - H.firstnbr[i];
     }
   }
 
   if (m_fill >= H.m)
-    error->all(FLERR,fmt::format("Fix qeq/reaxff H matrix size has been "
+    error->all(FLERR,fmt::format("Fix qeq/gauss H matrix size has been "
                                  "exceeded: m_fill={} H.m={}\n", m_fill, H.m));
 }
-
 
 /* ---------------------------------------------------------------------- */
 
@@ -625,7 +609,7 @@ double FixQEqGauss::calculate_H_wolf(double zei, double zej, double r)
   double sigij = sqrt(sigi*sigi+sigj*sigj);
   double siginv = 1.0/sigij;
   double rinv = 1.0/r;
-  double rcut = cutoff;
+  double rcut = sqrt(cutoff_sq);
   double rcutinv = 1.0/rcut;
   double erfrsiginv = erf(r*siginv);
   double erfrcutsiginv = erf(rcut*siginv);
@@ -645,7 +629,7 @@ double FixQEqGauss::calculate_H_dsf(double zei, double zej, double r)
   double sigij = sqrt(sigi*sigi+sigj*sigj);
   double siginv = 1.0/sigij;
   double rinv = 1.0/r;
-  double rcut = cutoff;
+  double rcut = sqrt(cutoff_sq);
   double rcutinv = 1.0/rcut;
   double erfrsiginv = erf(r*siginv);
   double erfrcutsiginv = erf(rcut*siginv);
@@ -657,8 +641,6 @@ double FixQEqGauss::calculate_H_dsf(double zei, double zej, double r)
   etmp1 = erfrsiginv*rinv-erfrcutsiginv*rcutinv;
   etmp2 = erfrcutsiginv*rcutinv*rcutinv+preexp*expterm*rcutinv;
   etmp3 = etmp1+etmp2*(r-rcut);
-  // DEBUG BABAK
-  //printf("DEBUG sigi: %10.5f, sigj: %10.5f, r: %10.5f, etmp: %10.5f, Jij: %10.5f\n", sigi, sigj, r, etmp3, qqrd2e*etmp3);
   
   return qqrd2e*etmp3;
 }
@@ -739,6 +721,7 @@ void FixQEqGauss::sparse_matvec(sparse_matrix *A, double *x, double *b)
     if (atom->mask[i] & groupbit)
       b[i] = 0;
   }
+
   for (ii = 0; ii < nn; ++ii) {
     i = ilist[ii];
     if (atom->mask[i] & groupbit) {
@@ -1032,48 +1015,48 @@ void FixQEqGauss::vector_add(double* dest, double c, double* v, int k)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::get_chi_field()
-{
-  memset(&chi_field[0],0.0,atom->nmax*sizeof(double));
-  if (!efield) return;
-
-  const double * const *x = (const double * const *)atom->x;
-  const int *mask = atom->mask;
-  const imageint *image = atom->image;
-  const int nlocal = atom->nlocal;
-
-
-  // update electric field region if necessary
-
-  Region *region = nullptr;
-  if (efield->iregion >= 0) {
-    region = domain->regions[efield->iregion];
-    region->prematch();
-  }
-
-  // efield energy is in real units of kcal/mol/angstrom, need to convert to eV
-
-  const double factor = -1.0/force->qe2f;
-
-  // currently we only support constant efield
-  // atom selection is for the group of fix efield
-
-  if (efield->varflag == FixEfield::CONSTANT) {
-    double unwrap[3];
-    const double fx = efield->ex;
-    const double fy = efield->ey;
-    const double fz = efield->ez;
-    const int efgroupbit = efield->groupbit;
-
-    // charge interactions
-    // force = qE, potential energy = F dot x in unwrapped coords
-
-    for (int i = 0; i < nlocal; i++) {
-      if (mask[i] & efgroupbit) {
-        if (region && !region->match(x[i][0],x[i][1],x[i][2])) continue;
-        domain->unmap(x[i],image[i],unwrap);
-        chi_field[i] = factor*(fx*unwrap[0] + fy*unwrap[1] + fz*unwrap[2]);
-      }
-    }
-  }
-}
+//void FixQEqGauss::get_chi_field()
+//{
+//  memset(&chi_field[0],0.0,atom->nmax*sizeof(double));
+//  if (!efield) return;
+//
+//  const double * const *x = (const double * const *)atom->x;
+//  const int *mask = atom->mask;
+//  const imageint *image = atom->image;
+//  const int nlocal = atom->nlocal;
+//
+//
+//  // update electric field region if necessary
+//
+//  Region *region = nullptr;
+//  if (efield->iregion >= 0) {
+//    region = domain->regions[efield->iregion];
+//    region->prematch();
+//  }
+//
+//  // efield energy is in real units of kcal/mol/angstrom, need to convert to eV
+//
+//  const double factor = -1.0/force->qe2f;
+//
+//  // currently we only support constant efield
+//  // atom selection is for the group of fix efield
+//
+//  if (efield->varflag == FixEfield::CONSTANT) {
+//    double unwrap[3];
+//    const double fx = efield->ex;
+//    const double fy = efield->ey;
+//    const double fz = efield->ez;
+//    const int efgroupbit = efield->groupbit;
+//
+//    // charge interactions
+//    // force = qE, potential energy = F dot x in unwrapped coords
+//
+//    for (int i = 0; i < nlocal; i++) {
+//      if (mask[i] & efgroupbit) {
+//        if (region && !region->match(x[i][0],x[i][1],x[i][2])) continue;
+//        domain->unmap(x[i],image[i],unwrap);
+//        chi_field[i] = factor*(fx*unwrap[0] + fy*unwrap[1] + fz*unwrap[2]);
+//      }
+//    }
+//  }
+//}

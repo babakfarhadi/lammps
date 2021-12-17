@@ -26,12 +26,12 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(qeq/gauss,FixQEqGauss);
+FixStyle(qeq/gauss_new,FixQEqGauss);
 // clang-format on
 #else
 
-#ifndef LMP_FIX_QEQ_GAUSS_H
-#define LMP_FIX_QEQ_GAUSS_H
+#ifndef LMP_FIX_QEQ_GAUSS_NEW_H
+#define LMP_FIX_QEQ_GAUSS_NEW_H
 
 #include "fix.h"
 
@@ -98,7 +98,7 @@ class FixQEqGauss : public Fix {
   double *Hdia_inv;
   double *b_s, *b_t;
   double *b_prc, *b_prm;
-  double *chi_field;
+  //double *chi_field;
 
   //CG storage
   double *p, *q, *r, *d;
@@ -141,7 +141,7 @@ class FixQEqGauss : public Fix {
   virtual void vector_sum(double *, double, double *, double, double *, int);
   virtual void vector_add(double *, double, double *, int);
 
-  virtual void get_chi_field();
+  //virtual void get_chi_field();
 
   // dual CG support
   int dual_enabled;            // 0: Original, separate s & t optimization; 1: dual optimization

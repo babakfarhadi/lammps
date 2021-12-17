@@ -1105,6 +1105,21 @@ Fix *Modify::get_fix_by_id(const std::string &id) const
   return nullptr;
 }
 
+// BABAK: reintroduce deprecated API for dump_mfp5
+/* ----------------------------------------------------------------------
+   find a fix by style
+   return index of fix or -1 if not found
+------------------------------------------------------------------------- */
+
+int Modify::find_fix_by_style(const char *style)
+{
+  int ifix;
+  for (ifix = 0; ifix < nfix; ifix++)
+    if (utils::strmatch(fix[ifix]->style,style)) break;
+  if (ifix == nfix) return -1;
+  return ifix;
+}
+
 /* ----------------------------------------------------------------------
    look up pointer to fixes by fix style name
    return vector of matching pointers

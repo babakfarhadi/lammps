@@ -19,7 +19,7 @@
    Based on fix qeq/reaxff by Hasan Metin Aktulga and fix qeq by Ray Shan
 ------------------------------------------------------------------------- */
 
-#include "fix_qeq_gauss.h"
+#include "fix_qeq_gauss_new.h"
 
 #include "atom.h"
 #include "citeme.h"
@@ -41,6 +41,8 @@
 #include "text_file_reader.h"
 #include "update.h"
 
+#include "pair_reaxff.h"
+#include "reaxff_api.h"
 #include <cmath>
 #include <cstring>
 #include <exception>
@@ -55,7 +57,7 @@ static constexpr double SMALL = 1.0e-14;
 
 /* ---------------------------------------------------------------------- */
 
-FixQEqGauss::FixQEqGauss(LAMMPS *lmp, int narg, char **arg) :
+FixQEqGaussNew::FixQEqGaussNew(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg), matvecs(0), pertype_option(nullptr)
 {
   scalar_flag = 1;
@@ -138,7 +140,7 @@ FixQEqGauss::FixQEqGauss(LAMMPS *lmp, int narg, char **arg) :
 
 /* ---------------------------------------------------------------------- */
 
-FixQEqGauss::~FixQEqGauss()
+FixQEqGaussNew::~FixQEqGaussNew()
 {
   if (copymode) return;
 
@@ -151,7 +153,7 @@ FixQEqGauss::~FixQEqGauss()
   memory->destroy(s_hist);
   memory->destroy(t_hist);
 
-  FixQEqGauss::deallocate_storage();
+  FixQEqGaussNew::deallocate_storage();
   deallocate_matrix();
 
   memory->destroy(chi);
@@ -162,7 +164,7 @@ FixQEqGauss::~FixQEqGauss()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::post_constructor()
+void FixQEqGaussNew::post_constructor()
 {
   grow_arrays(atom->nmax);
   for (int i = 0; i < atom->nmax; i++)
@@ -176,7 +178,7 @@ void FixQEqGauss::post_constructor()
 
 /* ---------------------------------------------------------------------- */
 
-int FixQEqGauss::setmask()
+int FixQEqGaussNew::setmask()
 {
   int mask = 0;
   mask |= PRE_FORCE;
@@ -187,14 +189,14 @@ int FixQEqGauss::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::pertype_parameters(char *arg)
+void FixQEqGaussNew::pertype_parameters(char *arg)
 {
   const int ntypes = atom->ntypes;
 
   memory->create(chi,ntypes+1,"qeq/gauss:chi");
   memory->create(eta,ntypes+1,"qeq/gauss:eta");
-  memory->create(zeta,ntypes+1,"qeq/gauss:zeta");
-  memory->create(zcore,ntypes+1,"qeq/gauss:zcore");
+  memory->create(zeta,ntypes+1,"qeq/gauss:gamma");
+  memory->create(zcore,ntypes+1,"qeq/gauss:gamma");
 
   if (comm->me == 0) {
     chi[0] = eta[0] = zeta[0] = zcore[0] = 0.0;
@@ -233,7 +235,7 @@ void FixQEqGauss::pertype_parameters(char *arg)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::allocate_storage()
+void FixQEqGaussNew::allocate_storage()
 {
   nmax = atom->nmax;
 
@@ -259,7 +261,7 @@ void FixQEqGauss::allocate_storage()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::deallocate_storage()
+void FixQEqGaussNew::deallocate_storage()
 {
   memory->destroy(s);
   memory->destroy(t);
@@ -279,7 +281,7 @@ void FixQEqGauss::deallocate_storage()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::reallocate_storage()
+void FixQEqGaussNew::reallocate_storage()
 {
   deallocate_storage();
   allocate_storage();
@@ -288,7 +290,7 @@ void FixQEqGauss::reallocate_storage()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::allocate_matrix()
+void FixQEqGaussNew::allocate_matrix()
 {
   int i,ii,n,m;
 
@@ -320,7 +322,7 @@ void FixQEqGauss::allocate_matrix()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::deallocate_matrix()
+void FixQEqGaussNew::deallocate_matrix()
 {
   memory->destroy(H.firstnbr);
   memory->destroy(H.numnbrs);
@@ -330,7 +332,7 @@ void FixQEqGauss::deallocate_matrix()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::reallocate_matrix()
+void FixQEqGaussNew::reallocate_matrix()
 {
   deallocate_matrix();
   allocate_matrix();
@@ -338,7 +340,7 @@ void FixQEqGauss::reallocate_matrix()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::init()
+void FixQEqGaussNew::init()
 {
   if (!atom->q_flag)
     error->all(FLERR,"Fix {} requires atom attribute q", style);
@@ -384,21 +386,21 @@ void FixQEqGauss::init()
 
 /* ---------------------------------------------------------------------- */
 
-double FixQEqGauss::compute_scalar()
+double FixQEqGaussNew::compute_scalar()
 {
   return matvecs/2.0;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::init_list(int /*id*/, NeighList *ptr)
+void FixQEqGaussNew::init_list(int /*id*/, NeighList *ptr)
 {
   list = ptr;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::setup_pre_force(int vflag)
+void FixQEqGaussNew::setup_pre_force(int vflag)
 {
   nn = list->inum;
   NN = list->inum + list->gnum;
@@ -419,7 +421,7 @@ void FixQEqGauss::setup_pre_force(int vflag)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::setup_pre_force_respa(int vflag, int ilevel)
+void FixQEqGaussNew::setup_pre_force_respa(int vflag, int ilevel)
 {
   if (ilevel < nlevels_respa-1) return;
   setup_pre_force(vflag);
@@ -427,14 +429,14 @@ void FixQEqGauss::setup_pre_force_respa(int vflag, int ilevel)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::min_setup_pre_force(int vflag)
+void FixQEqGaussNew::min_setup_pre_force(int vflag)
 {
   setup_pre_force(vflag);
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::init_storage()
+void FixQEqGaussNew::init_storage()
 {
   if (efield) get_chi_field();
 
@@ -454,7 +456,7 @@ void FixQEqGauss::init_storage()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::pre_force(int /*vflag*/)
+void FixQEqGaussNew::pre_force(int /*vflag*/)
 {
   if (update->ntimestep % nevery) return;
 
@@ -486,21 +488,21 @@ void FixQEqGauss::pre_force(int /*vflag*/)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::pre_force_respa(int vflag, int ilevel, int /*iloop*/)
+void FixQEqGaussNew::pre_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
   if (ilevel == nlevels_respa-1) pre_force(vflag);
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::min_pre_force(int vflag)
+void FixQEqGaussNew::min_pre_force(int vflag)
 {
   pre_force(vflag);
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::init_matvec()
+void FixQEqGaussNew::init_matvec()
 {
   /* fill-in H matrix */
   compute_H();
@@ -533,15 +535,14 @@ void FixQEqGauss::init_matvec()
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::compute_H()
+void FixQEqGaussNew::compute_H()
 {
   int jnum;
-  int i, j, ii, jj, itype, jtype, flag;
-  double dx, dy, dz, r_sqr, zei, zej;
-  const double SMALL = 0.0001;
+  int i, j, ii, jj, itype, jtype;
+  double dx, dy, dz, r_sqr;
+  double zei, zej;
 
   int *type = atom->type;
-  tagint *tag = atom->tag;
   double **x = atom->x;
   int *mask = atom->mask;
 
@@ -560,49 +561,33 @@ void FixQEqGauss::compute_H()
       for (jj = 0; jj < jnum; jj++) {
         j = jlist[jj];
         j &= NEIGHMASK;
+
         jtype = type[j];
         zej = zeta[jtype];
-
         dx = x[j][0] - x[i][0];
         dy = x[j][1] - x[i][1];
         dz = x[j][2] - x[i][2];
         r_sqr = SQR(dx) + SQR(dy) + SQR(dz);
 
-        flag = 0;
-        // DEBUG BABAK
-        //printf("DEBUG i: %1d, j: %1d, r_sqr: %10.5f\n",i, j, r_sqr);
-        if (r_sqr <= cutoff_sq) {
-          if (j < atom->nlocal) flag = 1;
-          else if (tag[i] < tag[j]) flag = 1;
-          else if (tag[i] == tag[j]) {
-            if (dz > SMALL) flag = 1;
-            else if (fabs(dz) < SMALL) {
-              if (dy > SMALL) flag = 1;
-              else if (fabs(dy) < SMALL && dx > SMALL)
-                flag = 1;
-            }
-          }
-        }
-
-        if (flag) {
-          H.jlist[m_fill] = j;
-          H.val[m_fill] =  calculate_H_dsf(zei, zej, sqrt(r_sqr));
-          m_fill++;
-        }
+        if (r_sqr > cutoff_sq) continue;
+        
+        H.jlist[m_fill] = j;
+        H.val[m_fill] = calculate_H_dsf(zei, zej, sqrt(r_sqr));
+        m_fill++;
       }
       H.numnbrs[i] = m_fill - H.firstnbr[i];
     }
   }
+  
 
   if (m_fill >= H.m)
-    error->all(FLERR,fmt::format("Fix qeq/reaxff H matrix size has been "
+    error->all(FLERR,fmt::format("Fix qeq/gauss H matrix size has been "
                                  "exceeded: m_fill={} H.m={}\n", m_fill, H.m));
 }
 
-
 /* ---------------------------------------------------------------------- */
 
-double FixQEqGauss::calculate_H(double zei, double zej, double r)
+double FixQEqGaussNew::calculate_H(double zei, double zej, double r)
 {
   double sigi = 1.0/(2.0*zei);
   double sigj = 1.0/(2.0*zej);
@@ -618,14 +603,14 @@ double FixQEqGauss::calculate_H(double zei, double zej, double r)
 
 /* ---------------------------------------------------------------------- */
 
-double FixQEqGauss::calculate_H_wolf(double zei, double zej, double r)
+double FixQEqGaussNew::calculate_H_wolf(double zei, double zej, double r)
 {
   double sigi = 1.0/(2.0*zei);
   double sigj = 1.0/(2.0*zej);
   double sigij = sqrt(sigi*sigi+sigj*sigj);
   double siginv = 1.0/sigij;
   double rinv = 1.0/r;
-  double rcut = cutoff;
+  double rcut = sqrt(cutoff_sq);
   double rcutinv = 1.0/rcut;
   double erfrsiginv = erf(r*siginv);
   double erfrcutsiginv = erf(rcut*siginv);
@@ -638,14 +623,14 @@ double FixQEqGauss::calculate_H_wolf(double zei, double zej, double r)
 }
 /* ---------------------------------------------------------------------- */
 
-double FixQEqGauss::calculate_H_dsf(double zei, double zej, double r)
+double FixQEqGaussNew::calculate_H_dsf(double zei, double zej, double r)
 {
   double sigi = 1.0/(2.0*zei);
   double sigj = 1.0/(2.0*zej);
   double sigij = sqrt(sigi*sigi+sigj*sigj);
   double siginv = 1.0/sigij;
   double rinv = 1.0/r;
-  double rcut = cutoff;
+  double rcut = sqrt(cutoff_sq);
   double rcutinv = 1.0/rcut;
   double erfrsiginv = erf(r*siginv);
   double erfrcutsiginv = erf(rcut*siginv);
@@ -657,15 +642,13 @@ double FixQEqGauss::calculate_H_dsf(double zei, double zej, double r)
   etmp1 = erfrsiginv*rinv-erfrcutsiginv*rcutinv;
   etmp2 = erfrcutsiginv*rcutinv*rcutinv+preexp*expterm*rcutinv;
   etmp3 = etmp1+etmp2*(r-rcut);
-  // DEBUG BABAK
-  //printf("DEBUG sigi: %10.5f, sigj: %10.5f, r: %10.5f, etmp: %10.5f, Jij: %10.5f\n", sigi, sigj, r, etmp3, qqrd2e*etmp3);
   
   return qqrd2e*etmp3;
 }
 
 /* ---------------------------------------------------------------------- */
 
-int FixQEqGauss::CG(double *b, double *x)
+int FixQEqGaussNew::CG(double *b, double *x)
 {
   int  i, j;
   double tmp, alpha, beta, b_norm;
@@ -723,7 +706,7 @@ int FixQEqGauss::CG(double *b, double *x)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::sparse_matvec(sparse_matrix *A, double *x, double *b)
+void FixQEqGaussNew::sparse_matvec(sparse_matrix *A, double *x, double *b)
 {
   int i, j, itr_j;
   int ii;
@@ -739,6 +722,7 @@ void FixQEqGauss::sparse_matvec(sparse_matrix *A, double *x, double *b)
     if (atom->mask[i] & groupbit)
       b[i] = 0;
   }
+
   for (ii = 0; ii < nn; ++ii) {
     i = ilist[ii];
     if (atom->mask[i] & groupbit) {
@@ -754,7 +738,7 @@ void FixQEqGauss::sparse_matvec(sparse_matrix *A, double *x, double *b)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::calculate_Q()
+void FixQEqGaussNew::calculate_Q()
 {
   int i, k;
   double u, s_sum, t_sum;
@@ -787,7 +771,7 @@ void FixQEqGauss::calculate_Q()
 
 /* ---------------------------------------------------------------------- */
 
-int FixQEqGauss::pack_forward_comm(int n, int *list, double *buf,
+int FixQEqGaussNew::pack_forward_comm(int n, int *list, double *buf,
                                   int /*pbc_flag*/, int * /*pbc*/)
 {
   int m;
@@ -814,7 +798,7 @@ int FixQEqGauss::pack_forward_comm(int n, int *list, double *buf,
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::unpack_forward_comm(int n, int first, double *buf)
+void FixQEqGaussNew::unpack_forward_comm(int n, int first, double *buf)
 {
   int i, m;
 
@@ -839,7 +823,7 @@ void FixQEqGauss::unpack_forward_comm(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-int FixQEqGauss::pack_reverse_comm(int n, int first, double *buf)
+int FixQEqGaussNew::pack_reverse_comm(int n, int first, double *buf)
 {
   int i, m;
   if (pack_flag == 5) {
@@ -859,7 +843,7 @@ int FixQEqGauss::pack_reverse_comm(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::unpack_reverse_comm(int n, int *list, double *buf)
+void FixQEqGaussNew::unpack_reverse_comm(int n, int *list, double *buf)
 {
   if (pack_flag == 5) {
     int m = 0;
@@ -877,7 +861,7 @@ void FixQEqGauss::unpack_reverse_comm(int n, int *list, double *buf)
    memory usage of local atom-based arrays
 ------------------------------------------------------------------------- */
 
-double FixQEqGauss::memory_usage()
+double FixQEqGaussNew::memory_usage()
 {
   double bytes;
 
@@ -897,7 +881,7 @@ double FixQEqGauss::memory_usage()
    allocate fictitious charge arrays
 ------------------------------------------------------------------------- */
 
-void FixQEqGauss::grow_arrays(int nmax)
+void FixQEqGaussNew::grow_arrays(int nmax)
 {
   memory->grow(s_hist,nmax,nprev,"qeq:s_hist");
   memory->grow(t_hist,nmax,nprev,"qeq:t_hist");
@@ -907,7 +891,7 @@ void FixQEqGauss::grow_arrays(int nmax)
    copy values within fictitious charge arrays
 ------------------------------------------------------------------------- */
 
-void FixQEqGauss::copy_arrays(int i, int j, int /*delflag*/)
+void FixQEqGaussNew::copy_arrays(int i, int j, int /*delflag*/)
 {
   for (int m = 0; m < nprev; m++) {
     s_hist[j][m] = s_hist[i][m];
@@ -919,7 +903,7 @@ void FixQEqGauss::copy_arrays(int i, int j, int /*delflag*/)
    pack values in local atom-based array for exchange with another proc
 ------------------------------------------------------------------------- */
 
-int FixQEqGauss::pack_exchange(int i, double *buf)
+int FixQEqGaussNew::pack_exchange(int i, double *buf)
 {
   for (int m = 0; m < nprev; m++) buf[m] = s_hist[i][m];
   for (int m = 0; m < nprev; m++) buf[nprev+m] = t_hist[i][m];
@@ -930,7 +914,7 @@ int FixQEqGauss::pack_exchange(int i, double *buf)
    unpack values in local atom-based array from exchange with another proc
 ------------------------------------------------------------------------- */
 
-int FixQEqGauss::unpack_exchange(int nlocal, double *buf)
+int FixQEqGaussNew::unpack_exchange(int nlocal, double *buf)
 {
   for (int m = 0; m < nprev; m++) s_hist[nlocal][m] = buf[m];
   for (int m = 0; m < nprev; m++) t_hist[nlocal][m] = buf[nprev+m];
@@ -939,7 +923,7 @@ int FixQEqGauss::unpack_exchange(int nlocal, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-double FixQEqGauss::parallel_norm(double *v, int n)
+double FixQEqGaussNew::parallel_norm(double *v, int n)
 {
   int  i;
   double my_sum, norm_sqr;
@@ -961,7 +945,7 @@ double FixQEqGauss::parallel_norm(double *v, int n)
 
 /* ---------------------------------------------------------------------- */
 
-double FixQEqGauss::parallel_dot(double *v1, double *v2, int n)
+double FixQEqGaussNew::parallel_dot(double *v1, double *v2, int n)
 {
   int  i;
   double my_dot, res;
@@ -983,7 +967,7 @@ double FixQEqGauss::parallel_dot(double *v1, double *v2, int n)
 
 /* ---------------------------------------------------------------------- */
 
-double FixQEqGauss::parallel_vector_acc(double *v, int n)
+double FixQEqGaussNew::parallel_vector_acc(double *v, int n)
 {
   int  i;
   double my_acc, res;
@@ -1005,7 +989,7 @@ double FixQEqGauss::parallel_vector_acc(double *v, int n)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::vector_sum(double* dest, double c, double* v,
+void FixQEqGaussNew::vector_sum(double* dest, double c, double* v,
                                 double d, double* y, int k)
 {
   int kk;
@@ -1019,7 +1003,7 @@ void FixQEqGauss::vector_sum(double* dest, double c, double* v,
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::vector_add(double* dest, double c, double* v, int k)
+void FixQEqGaussNew::vector_add(double* dest, double c, double* v, int k)
 {
   int kk;
 
@@ -1032,7 +1016,7 @@ void FixQEqGauss::vector_add(double* dest, double c, double* v, int k)
 
 /* ---------------------------------------------------------------------- */
 
-void FixQEqGauss::get_chi_field()
+void FixQEqGaussNew::get_chi_field()
 {
   memset(&chi_field[0],0.0,atom->nmax*sizeof(double));
   if (!efield) return;
