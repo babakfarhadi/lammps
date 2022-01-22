@@ -174,18 +174,6 @@ void FixACKS2Gauss::pertype_parameters(char *arg)
   MPI_Bcast(zeta,ntypes+1,MPI_DOUBLE,0,world);
   MPI_Bcast(zcore,ntypes+1,MPI_DOUBLE,0,world);
   MPI_Bcast(Xij,(ntypes+1)*(ntypes+1)*4,MPI_DOUBLE,0,world);
-
-  // DEBUG BABAK
-
-  //for (n=1; n <= ntypes; ++n){
-  //  printf("DEBUG QEQ: %1d %10.5f %10.5f %10.5f %10.5f \n", n, chi[n], eta[n], zeta[n], zcore[n]);
-  //}
-  //for (n=0; n <= ntypes; ++n){
-  //  for (m=0; m <= ntypes; ++m){
-  //    printf("DEBUG ACKS2: %1d %1d %12.8f %12.8f %12.8f %12.8f \n", n, m, 
-  //            Xij[n*(ntypes+1)*4+m*4+0], Xij[n*(ntypes+1)*4+m*4+1], Xij[n*(ntypes+1)*4+m*4+2], Xij[n*(ntypes+1)*4+m*4+3]);
-  //  }
-  //}
 }
 
 /* ---------------------------------------------------------------------- */
@@ -444,33 +432,15 @@ void FixACKS2Gauss::compute_X()
             X.val[m_fill] = X_val;
             X_diag[i] -= X_val;
             X_diag[j] -= X_val;
-            //if(atom->tag[i]-1==23)
-              //X_diag[i] = -0.036561;
-              //printf("%5d %12.6f \n", comm->me, X_diag[i]);
-            //if(atom->tag[j]-1==23)
-              //X_diag[j] = -0.036561;
-              //printf("%5d %12.6f \n", comm->me, X_diag[j]);
+
             m_fill++;
-            //printf("DEBUG X_mat %5d %5d %5d %5d %5d %5d %5d %5d %5d %12.6f %12.6f %12.6f %12.6f\n", comm->me, i, j, atom->tag[i], atom->tag[j],
-            //atom->map(atom->tag[i]), atom->map(atom->tag[j]), itype, jtype, c1, c2, sqrt(r_sqr), X_val);
-            //printf("DEBUG X_mat %5d %5d %5d %12.6f %12.6f\n", comm->me, atom->tag[i]-1, atom->tag[j]-1, sqrt(r_sqr), X_val);
           }
         }
       }
 
       X.numnbrs[i] = m_fill - X.firstnbr[i];
     }
-    //if(i==19){
-    //  printf("HALLOHALLOHALLO\n");
-    //  printf("DEBUG NUR 19 %5d %5d %5d %5d %12.6f %12.6f\n", i, atom->map(atom->tag[i]), itype, type[atom->map(atom->tag[i])], 0.0, X_diag[i]);
-    //}
-    //printf("DEBUG X_mat %5d %5d %12.6f %12.6f\n", atom->tag[i]-1, atom->tag[i]-1, 0.0, X_diag[i]);
   }
-  //for (ii = 0; ii < nn; ii++) {
-  //  i = ilist[ii];
-  //  printf("DEBUG X_mat %5d %5d %5d %12.6f %12.6f\n", comm->me, atom->tag[i]-1, atom->tag[i]-1, 0.0, X_diag[i]);
-  //}
-
   if (m_fill >= X.m)
     error->all(FLERR,"Fix acks2/gauss has insufficient ACKS2 X matrix size: m_fill={} X.m={}\n",m_fill,X.m);
 }
@@ -497,19 +467,6 @@ int FixACKS2Gauss::BiCGStab(double *b, double *x)
   double tmp, alpha, beta, omega, sigma, rho, rho_old, rnorm, bnorm;
 
   int jj;
-  //DEBUG BABAK:
-  //int ii, nn, itr_j;
-  //for (ii = 0; ii < nn; ++ii) {
-  //  i = ilist[ii];
-  //  if (atom->mask[i] & groupbit) {
-  //    for (itr_j=H.firstnbr[i]; itr_j<H.firstnbr[i]+H.numnbrs[i]; itr_j++) {
-  //      printf("%10.6f ", H.val[itr_j]);
-  //    }
-  //    for (itr_j=X.firstnbr[i]; itr_j<X.firstnbr[i]+X.numnbrs[i]; itr_j++) {
-  //      printf("%10.6f ", X.val[itr_j]);
-  //    }
-  //  }
-  //}
 
   sparse_matvec_acks2(&H, &X, x, d);
   pack_flag = 1;
@@ -645,18 +602,14 @@ void FixACKS2Gauss::sparse_matvec_acks2(sparse_matrix *H, sparse_matrix *X, doub
   // last two rows
   b[2*NN] = 0;
   b[2*NN + 1] = 0;
-  //printf("DEBUG SPARSE MATVEC\n");
   for (ii = 0; ii < nn; ++ii) {
     i = ilist[ii];
     if (atom->mask[i] & groupbit) {
-      //printf("DEBUG H_diag: %5d %10.6f \n",i, 1.0/Hdia_inv[i]);
-      //printf("DEBUG X_diag: %5d %10.6f \n",i, X_diag[i]);
       // H Matrix
       for (itr_j=H->firstnbr[i]; itr_j<H->firstnbr[i]+H->numnbrs[i]; itr_j++) {
         j = H->jlist[itr_j];
         b[i] += H->val[itr_j] * x[j];
         b[j] += H->val[itr_j] * x[i];
-        //printf("DEBUG H_mat: %5d %5d %10.6f \n",i ,j, H->val[itr_j]);
       }
 
       // X Matrix
@@ -664,7 +617,6 @@ void FixACKS2Gauss::sparse_matvec_acks2(sparse_matrix *H, sparse_matrix *X, doub
         j = X->jlist[itr_j];
         b[NN + i] += X->val[itr_j] * x[NN + j];
         b[NN + j] += X->val[itr_j] * x[NN + i];
-        //printf("DEBUG X_mat: %5d %5d %10.6f \n",i ,j, X->val[itr_j]);
       }
 
       // Identity Matrix
