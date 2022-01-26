@@ -43,6 +43,7 @@ class FixACKS2Gauss : public FixQEqGauss {
   sparse_matrix X;
   double *Xdia_inv;
   double *X_diag;
+  double *u;
 
   //BiCGStab storage
   double *g, *q_hat, *r_hat, *y, *z;

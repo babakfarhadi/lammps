@@ -64,6 +64,9 @@ FixACKS2Gauss::FixACKS2Gauss(LAMMPS *lmp, int narg, char **arg) :
   X.jlist = nullptr;
   X.val = nullptr;
 
+  // KS potential vector
+  u = nullptr;
+
   // Update comm sizes for this fix
   comm_forward = comm_reverse = 2;
 
@@ -208,6 +211,8 @@ void FixACKS2Gauss::allocate_storage()
   memory->create(r_hat,size,"acks2:r_hat");
   memory->create(y,size,"acks2:y");
   memory->create(z,size,"acks2:z");
+
+  memory->create(u,size,"acks2:u");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -380,7 +385,6 @@ void FixACKS2Gauss::compute_X()
   // fill in the X matrix
   m_fill = 0;
   r_sqr = 0;
-  printf("%5d %5d\n", comm->me, nn);
   for (ii = 0; ii < nn; ii++) {
     i = ilist[ii];
     itype = type[i];
@@ -670,6 +674,7 @@ void FixACKS2Gauss::calculate_Q()
     i = ilist[ii];
     if (atom->mask[i] & groupbit)
       atom->q[i] = s[i];
+      u[i] = s[NN+i];
   }
 }
 
