@@ -33,7 +33,12 @@ class FixACKS2Gauss : public FixQEqGauss {
   void init_storage();
   virtual void pre_force(int);
 
+  double get_cutoff() { return cutoff; }
   double *get_s() { return s; }
+  double *get_u() { return u; }
+  double *get_chi() { return chi; }
+  double *get_eta() { return eta; }
+  double *get_Xij() { return Xij; }
 
  protected:
   int last_rows_rank, last_rows_flag;
