@@ -80,13 +80,15 @@ PairBuck6dACKS2GaussDSF::~PairBuck6dACKS2GaussDSF()
 
 void PairBuck6dACKS2GaussDSF::compute(int eflag, int vflag)
 {
-  int i,j,ii,jj,inum,jnum,itype,jtype;
+  int i,j,ii,jj,inum,jnum,itype,jtype,moli,molj;
   double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,ecoul,fpair;
   double r,rsq,r2inv,r6inv,r14inv,rexp,forcecoul,forcebuck6d,factor_coul,factor_lj;
   double term1,term2,term3,term4,term5;
   double rcu,rqu,sme,smf,ebuck6d;
   double prefactor,erfcc,erfcd,arg;
+  double Xij_1,Xij_2,eresp,forceresp,eself;
   int *ilist,*jlist,*numneigh,**firstneigh;
+  const int ntypes = atom->ntypes;
 
   evdwl = ecoul = 0.0;
   ev_init(eflag,vflag);
@@ -101,10 +103,11 @@ void PairBuck6dACKS2GaussDSF::compute(int eflag, int vflag)
   int newton_pair = force->newton_pair;
   double qqrd2e = force->qqrd2e;
 
-  //auto ifix = modify->get_fix_by_style("^acks2/gauss").front();
-  double *s = acks2fix->get_s();
   double *u = acks2fix->get_u();
+  double *chi = acks2fix->get_chi();
+  double *eta = acks2fix->get_eta();
   double *Xij = acks2fix->get_Xij();
+  double *X_diag = acks2fix->get_X_diag();
 
   inum = list->inum;
   ilist = list->ilist;
@@ -121,6 +124,7 @@ void PairBuck6dACKS2GaussDSF::compute(int eflag, int vflag)
     ytmp = x[i][1];
     ztmp = x[i][2];
     itype = type[i];
+    moli = atom->molecule[i];
     jlist = firstneigh[i];
     jnum = numneigh[i];
 
@@ -135,6 +139,7 @@ void PairBuck6dACKS2GaussDSF::compute(int eflag, int vflag)
       delz = ztmp - x[j][2];
       rsq = delx*delx + dely*dely + delz*delz;
       jtype = type[j];
+      molj = atom->molecule[j];
 
       if (rsq < cutsq[itype][jtype]) {
         r2inv = 1.0/rsq;
@@ -177,11 +182,26 @@ void PairBuck6dACKS2GaussDSF::compute(int eflag, int vflag)
 
           forcecoul = prefactor * ((erfcc/r) - (2.0/MY_PIS*alpha_ij[itype][jtype]*erfcd) +
                                                 r*f_shift_ij[itype][jtype]) * r;
-
+          //BABAK: WHAT IS THIS?
           if (factor_coul < 1.0) forcecoul -= (1.0-factor_coul)*prefactor;
+          //printf("DEBUG FACTOR_COUL: %12.6f\n", factor_coul);
         } else forcecoul = 0.0;
 
-        fpair = (forcecoul + factor_lj*forcebuck6d) * r2inv;
+        if (moli == molj) {
+          Xij_1 = Xij[itype*(ntypes+1)*4+jtype*4+0];
+          Xij_2 = Xij[itype*(ntypes+1)*4+jtype*4+1];
+          eresp = Xij_1+Xij_2*r;
+          forceresp = Xij_2;
+        }
+        else {
+          Xij_1 = Xij[itype*(ntypes+1)*4+jtype*4+2];
+          Xij_2 = Xij[itype*(ntypes+1)*4+jtype*4+3];
+          eresp = Xij_1*(exp(-Xij_2*r)-(1-Xij_2*(r-cut_coul))*exp(-Xij_2*cut_coul));
+          forceresp = Xij_1*Xij_2*(exp(-Xij_2*cut_coul)-exp(-Xij_2*r));
+        }
+        eresp *= u[i]*u[j];
+        forceresp *= u[i]*u[j];
+        fpair = (forcecoul + forceresp + factor_lj*forcebuck6d) * r2inv;
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
@@ -205,9 +225,12 @@ void PairBuck6dACKS2GaussDSF::compute(int eflag, int vflag)
         }
 
         if (evflag) ev_tally(i,j,nlocal,newton_pair,
-                             evdwl,ecoul,fpair,delx,dely,delz);
+                             evdwl,ecoul+eresp,fpair,delx,dely,delz);
       }
     }
+    eself = (chi[itype]-u[i])*q[i]+0.5*(q[i]*q[i]*eta[itype]+u[i]*u[i]*X_diag[i]);
+    if (evflag) ev_tally(i,i,nlocal,newton_pair,
+                             0.0,eself,0.0,0.0,0.0,0.0);
   }
 
   if (vflag_fdotr) virial_fdotr_compute();
@@ -517,7 +540,16 @@ double PairBuck6dACKS2GaussDSF::single(int i, int j, int itype, int jtype, doubl
   double rcu,rqu,sme,smf;
   double erfcc,erfcd,prefactor,arg;
   double forcecoul,forcebuck6d,ebuck6d,phicoul,phibuck6d;
+  //BABAK: ?????
+  int moli,molj;
+  double Xij_1,Xij_2,eresp,forceresp;
+  double *u = acks2fix->get_u();
+  double *Xij = acks2fix->get_Xij();
 
+  const int ntypes = atom->ntypes;
+  printf("!!!!!!WARNING: NOT IMPLEMENTED YET!!!!!");
+  moli = atom->molecule[i];
+  molj = atom->molecule[j];
   r2inv = 1.0/rsq;
   r = sqrt(rsq);
   if (rsq < cut_ljsq[itype][jtype]) {
@@ -555,7 +587,21 @@ double PairBuck6dACKS2GaussDSF::single(int i, int j, int itype, int jtype, doubl
                                           r*f_shift_ij[itype][jtype]) * r;
   } else forcecoul = 0.0;
 
-  fforce = (forcecoul + factor_lj*forcebuck6d) * r2inv;
+  if (moli == molj) {
+    Xij_1 = Xij[itype*(ntypes+1)*4+jtype*4+0];
+    Xij_2 = Xij[itype*(ntypes+1)*4+jtype*4+1];
+    eresp = Xij_1+Xij_2*r;
+    forceresp = Xij_2;
+  }
+  else {
+    Xij_1 = Xij[itype*(ntypes+1)*4+jtype*4+2];
+    Xij_2 = Xij[itype*(ntypes+1)*4+jtype*4+3];
+    eresp = Xij_1*(exp(-Xij_2*r)-(1-Xij_2*(r-cut_coul))*exp(-Xij_2*cut_coul));
+    forceresp = Xij_1*Xij_2*(exp(-Xij_2*cut_coul)-exp(-Xij_2*r));
+  }
+  eresp *= u[i]*u[j];
+  forceresp *= u[i]*u[j];
+  fforce = (forcecoul + forceresp + factor_lj*forcebuck6d) * r2inv;
 
   double eng = 0.0;
   if (rsq < cut_ljsq[itype][jtype]) {
@@ -567,6 +613,7 @@ double PairBuck6dACKS2GaussDSF::single(int i, int j, int itype, int jtype, doubl
     phicoul = prefactor * (erfcc - r*e_shift_ij[itype][jtype] -
                                  rsq*f_shift_ij[itype][jtype]);
     eng += phicoul;
+    eng += eresp;
   }
 
   return eng;

@@ -39,6 +39,7 @@ class FixACKS2Gauss : public FixQEqGauss {
   double *get_chi() { return chi; }
   double *get_eta() { return eta; }
   double *get_Xij() { return Xij; }
+  double *get_X_diag() { return X_diag; }
 
  protected:
   int last_rows_rank, last_rows_flag;
