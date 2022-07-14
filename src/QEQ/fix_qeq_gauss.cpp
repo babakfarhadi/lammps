@@ -655,7 +655,7 @@ double FixQEqGauss::calculate_H_dsf(double zei, double zej, double r)
   double etmp1, etmp2, etmp3;
   
   etmp1 = erfrsiginv*rinv-erfrcutsiginv*rcutinv;
-  etmp2 = erfrcutsiginv*rcutinv*rcutinv+preexp*expterm*rcutinv;
+  etmp2 = erfrcutsiginv*rcutinv*rcutinv-preexp*expterm*rcutinv;
   etmp3 = etmp1+etmp2*(r-rcut);
   // DEBUG BABAK
   //printf("DEBUG sigi: %10.5f, sigj: %10.5f, r: %10.5f, etmp: %10.5f, Jij: %10.5f\n", sigi, sigj, r, etmp3, qqrd2e*etmp3);

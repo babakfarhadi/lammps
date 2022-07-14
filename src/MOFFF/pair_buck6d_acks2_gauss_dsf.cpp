@@ -81,7 +81,7 @@ PairBuck6dACKS2GaussDSF::~PairBuck6dACKS2GaussDSF()
 void PairBuck6dACKS2GaussDSF::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype,moli,molj;
-  double qtmp,xtmp,ytmp,ztmp,delx,dely,delz,evdwl,ecoul,fpair;
+  double qtmp,xtmp,ytmp,ztmp,utmp,delx,dely,delz,evdwl,ecoul,fpair,uij;
   double r,rsq,r2inv,r6inv,r14inv,rexp,forcecoul,forcebuck6d,factor_coul,factor_lj;
   double term1,term2,term3,term4,term5;
   double rcu,rqu,sme,smf,ebuck6d;
@@ -120,6 +120,7 @@ void PairBuck6dACKS2GaussDSF::compute(int eflag, int vflag)
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
     qtmp = q[i];
+    utmp = u[i];
     xtmp = x[i][0];
     ytmp = x[i][1];
     ztmp = x[i][2];
@@ -182,25 +183,31 @@ void PairBuck6dACKS2GaussDSF::compute(int eflag, int vflag)
 
           forcecoul = prefactor * ((erfcc/r) - (2.0/MY_PIS*alpha_ij[itype][jtype]*erfcd) +
                                                 r*f_shift_ij[itype][jtype]) * r;
-          //BABAK: WHAT IS THIS?
           if (factor_coul < 1.0) forcecoul -= (1.0-factor_coul)*prefactor;
-          //printf("DEBUG FACTOR_COUL: %12.6f\n", factor_coul);
         } else forcecoul = 0.0;
 
-        if (moli == molj) {
-          Xij_1 = Xij[itype*(ntypes+1)*4+jtype*4+0];
-          Xij_2 = Xij[itype*(ntypes+1)*4+jtype*4+1];
-          eresp = Xij_1+Xij_2*r;
-          forceresp = Xij_2;
+        if (rsq < cut_coulsq) {
+          if (moli == molj) {
+            Xij_1 = Xij[itype*(ntypes+1)*4+jtype*4+0];
+            Xij_2 = Xij[itype*(ntypes+1)*4+jtype*4+1];
+            eresp = Xij_1+Xij_2*r;
+            forceresp = Xij_2;
+          }
+          else {
+            Xij_1 = Xij[itype*(ntypes+1)*4+jtype*4+2];
+            Xij_2 = Xij[itype*(ntypes+1)*4+jtype*4+3];
+            eresp = Xij_1*(exp(-Xij_2*r)-(1.0-Xij_2*(r-cut_coul))*exp(-Xij_2*cut_coul));
+            forceresp = Xij_1*Xij_2*(exp(-Xij_2*cut_coul)-exp(-Xij_2*r));
+          }
+          eresp *= utmp*u[j];
+          uij = utmp-u[j];
+          forceresp *= 0.5*uij*uij*r;
         }
         else {
-          Xij_1 = Xij[itype*(ntypes+1)*4+jtype*4+2];
-          Xij_2 = Xij[itype*(ntypes+1)*4+jtype*4+3];
-          eresp = Xij_1*(exp(-Xij_2*r)-(1-Xij_2*(r-cut_coul))*exp(-Xij_2*cut_coul));
-          forceresp = Xij_1*Xij_2*(exp(-Xij_2*cut_coul)-exp(-Xij_2*r));
+          eresp = 0.0;
+          forceresp = 0.0;
         }
-        eresp *= u[i]*u[j];
-        forceresp *= u[i]*u[j];
+
         fpair = (forcecoul + forceresp + factor_lj*forcebuck6d) * r2inv;
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;

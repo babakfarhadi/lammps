@@ -675,7 +675,7 @@ void FixACKS2Gauss::calculate_Q()
     if (atom->mask[i] & groupbit)
       atom->q[i] = s[i];
       //BABAK: CHECK SIGN HERE!
-      u[i] = s[NN+i];
+      u[i] = -s[NN+i];
   }
 }
 
