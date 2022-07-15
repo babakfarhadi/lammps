@@ -63,6 +63,10 @@ class FixQEqGauss : public Fix {
 
   virtual double compute_scalar();
 
+  double get_cutoff() { return cutoff; }
+  double *get_chi() { return chi; }
+  double *get_eta() { return eta; }
+
  protected:
   int nevery;
   int matvecs;
