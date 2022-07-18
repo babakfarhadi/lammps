@@ -28,8 +28,6 @@
 #include "pair_reaxff.h"
 #include "reaxff_api.h"
 
-#include <cstring>
-
 using namespace LAMMPS_NS;
 using namespace FixConst;
 using namespace ReaxFF;
@@ -39,18 +37,7 @@ using namespace ReaxFF;
 FixReaxFFBonds::FixReaxFFBonds(LAMMPS *lmp, int narg, char **arg) :
   Fix(lmp, narg, arg)
 {
-  //RS additional options for mfp5 dump of bonds
-  nbondmax = 0;
-  
-  if (narg == 7) {
-    if (strcmp(arg[5],"mfp5") != 0) error->all(FLERR, "Illegal fix reaxff/bonds command 1");
-    nbondmax = utils::inumeric(FLERR,arg[6],false,lmp);
-    if (nbondmax < 0 )
-      error->all(FLERR,"Illegal fix reaxff/bonds command 2");
-
-  }
-  //RS end -> plus "else" in next line
-  else if (narg != 5) error->all(FLERR,"Illegal fix reaxff/bonds command");
+  if (narg != 5) error->all(FLERR,"Illegal fix reaxff/bonds command");
 
   MPI_Comm_rank(world,&me);
   MPI_Comm_size(world,&nprocs);
@@ -69,8 +56,8 @@ FixReaxFFBonds::FixReaxFFBonds(LAMMPS *lmp, int narg, char **arg) :
       if (!fp) error->one(FLERR,"Cannot open compressed file");
     } else fp = fopen(arg[4],"w");
 
-    if (!fp) error->one(FLERR,fmt::format("Cannot open fix reaxff/bonds file {}: "
-                                          "{}",arg[4],utils::getsyserror()));
+    if (!fp) error->one(FLERR,fmt::format("Cannot open fix reaxff/bonds file {}: {}",
+                                          arg[4],utils::getsyserror()));
   }
 
   if (atom->tag_consecutive() == 0)
@@ -114,7 +101,7 @@ void FixReaxFFBonds::setup(int /*vflag*/)
 
 void FixReaxFFBonds::init()
 {
-  reaxff = (PairReaxFF *) force->pair_match("^reax..",0);
+  reaxff = dynamic_cast<PairReaxFF *>( force->pair_match("^reax..",0));
   if (reaxff == nullptr) error->all(FLERR,"Cannot use fix reaxff/bonds without "
                                 "pair_style reaxff, reaxff/kk, or reaxff/omp");
 }
@@ -253,40 +240,23 @@ void FixReaxFFBonds::RecvBuffer(double *buf, int nbuf, int nbuf_local,
 {
   int i, j, k, itype;
   int inode, nlocal_tmp, numbonds;
-  tagint itag,jtag;
+  tagint itag;
   int nlocal = atom->nlocal;
   bigint ntimestep = update->ntimestep;
-  double sbotmp, nlptmp, avqtmp, abotmp;
+  double sbotmp, nlptmp, avqtmp;
 
   double cutof3 = reaxff->api->control->bg_cut;
   MPI_Request irequest, irequest2;
 
-  //RS
-  int bi, nj;
-  //RS end
-
   if (me == 0) {
-    fprintf(fp,"# Timestep " BIGINT_FORMAT " \n",ntimestep);
-    fprintf(fp,"# \n");
-    fprintf(fp,"# Number of particles %d \n",natoms);
-    fprintf(fp,"# \n");
-    fprintf(fp,"# Max number of bonds per atom %d with "
-            "coarse bond order cutoff %5.3f \n",maxnum,cutof3);
-    fprintf(fp,"# Particle connection table and bond orders \n");
-    fprintf(fp,"# id type nb id_1...id_nb mol bo_1...bo_nb abo nlp q \n");
+    fmt::print(fp,"# Timestep {}\n#\n",ntimestep);
+    fmt::print(fp,"# Number of particles {}\n#\n",natoms);
+    fmt::print(fp,"# Max number of bonds per atom {} with coarse bond order cutoff {:5.3f}\n",
+               maxnum,cutof3);
+    fmt::print(fp,"# Particle connection table and bond orders\n"
+               "# id type nb id_1...id_nb mol bo_1...bo_nb abo nlp q\n");
   }
 
-  // RS: init the complete copy buffer for bondord and bondtab
-  if (me == 0) {
-    for (i = 0; i < nbondmax; i++){
-      bondtab[i*2]   = 0;
-      bondtab[i*2+1] = 0;
-      bondord[i]     = -1.0;
-    }
-  }
-  
-  bi = 0;  
-  //RS end
   j = 2;
   if (me == 0) {
     for (inode = 0; inode < nprocs; inode ++) {
@@ -306,50 +276,26 @@ void FixReaxFFBonds::RecvBuffer(double *buf, int nbuf, int nbuf_local,
         avqtmp = buf[j+3];
         numbonds = nint(buf[j+4]);
 
-        fprintf(fp," " TAGINT_FORMAT " %d %d",itag,itype,numbonds);
-
-        for (k = 5; k < 5+numbonds; k++) {
-          jtag = static_cast<tagint> (buf[j+k]);
-          fprintf(fp," " TAGINT_FORMAT,jtag);
-        }
+        auto mesg = fmt::format(" {} {} {}",itag,itype,numbonds);
+        for (k = 5; k < 5+numbonds; k++)
+          mesg += " " + std::to_string(static_cast<tagint> (buf[j+k]));
         j += (5+numbonds);
 
-        fprintf(fp," " TAGINT_FORMAT,static_cast<tagint> (buf[j]));
+        mesg += " " + std::to_string(static_cast<tagint> (buf[j]));
         j ++;
 
-        for (k = 0; k < numbonds; k++) {
-          abotmp = buf[j+k];
-          fprintf(fp,"%14.3f",abotmp);
-        }
+        for (k = 0; k < numbonds; k++) mesg += fmt::format("{:14.3f}",buf[j+k]);
         j += (1+numbonds);
-        fprintf(fp,"%14.3f%14.3f%14.3f\n",sbotmp,nlptmp,avqtmp);
 
-        //RS write bonds to bontab/bondord for mfp5 dumping if nbondmax >0
-        if (nbondmax > 0) {
-          // need to get nj to point to the right entry in buf again
-          nj = j - 2 - (2*numbonds);
-          for (k = 0; k < numbonds; k++) {
-            jtag = static_cast<tagint> (buf[nj+k]);
-            // save only if jtag > itag and if bi smaller than nbondmax
-            if (jtag > itag && bi<nbondmax){
-              bondtab[bi*2]   = itag;
-              bondtab[bi*2+1] = jtag;
-              bondord[bi]     = buf[nj+1+numbonds+k];
-
-              //printf("DEBUG §§ %5d %5d %5d %12.3f\n", bi, itag, jtag, bondord[bi]);
-
-              bi += 1;
-            }
-          }
-        }
-        //RS end
+        mesg += fmt::format("{:14.3f}{:14.3f}{:14.3f}\n",sbotmp,nlptmp,avqtmp);
+        fmt::print(fp, mesg);
       }
     }
   } else {
     MPI_Isend(&buf[0],nbuf_local,MPI_DOUBLE,0,0,world,&irequest2);
     MPI_Wait(&irequest2,MPI_STATUS_IGNORE);
   }
-  if (me ==0) fprintf(fp,"# \n");
+  if (me ==0) fputs("# \n",fp);
 
 }
 
@@ -370,12 +316,6 @@ void FixReaxFFBonds::destroy()
   memory->destroy(abo);
   memory->destroy(neighid);
   memory->destroy(numneigh);
-  //RS delete bondtab only on master
-  if (me == 0) {
-    delete [] bondtab;
-    delete [] bondord;
-  }
-  //RS end
 }
 
 /* ---------------------------------------------------------------------- */
@@ -385,12 +325,6 @@ void FixReaxFFBonds::allocate()
   memory->create(abo,nmax,MAXREAXBOND,"reaxff/bonds:abo");
   memory->create(neighid,nmax,MAXREAXBOND,"reaxff/bonds:neighid");
   memory->create(numneigh,nmax,"reaxff/bonds:numneigh");
-  //RS allocate bondtab only on master 
-  if (me==0){
-    bondtab = new int[nbondmax*2];
-    bondord = new double[nbondmax];
-  }
-  //RS end
 }
 
 /* ---------------------------------------------------------------------- */

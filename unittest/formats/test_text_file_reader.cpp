@@ -72,7 +72,7 @@ TEST_F(TextFileReaderTest, permissions)
 {
     platform::unlink("text_reader_noperms.file");
     FILE *fp = fopen("text_reader_noperms.file", "w");
-    ASSERT_NE(fp,nullptr);
+    ASSERT_NE(fp, nullptr);
     fputs("word\n", fp);
     fclose(fp);
     chmod("text_reader_noperms.file", 0);
@@ -111,7 +111,7 @@ TEST_F(TextFileReaderTest, usefp)
     delete reader;
 
     // check that we reached EOF and the destructor didn't close the file.
-    ASSERT_EQ(feof(fp), 1);
+    ASSERT_NE(feof(fp), 0);
     ASSERT_EQ(fclose(fp), 0);
 }
 

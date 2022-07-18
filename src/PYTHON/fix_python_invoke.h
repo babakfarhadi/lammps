@@ -28,44 +28,18 @@ namespace LAMMPS_NS {
 class FixPythonInvoke : public Fix {
  public:
   FixPythonInvoke(class LAMMPS *, int, char **);
-  virtual ~FixPythonInvoke();
-  int setmask();
-  virtual void end_of_step();
-  virtual void post_force(int);
-  virtual void min_setup(int);
-  virtual void min_post_force(int);
-  virtual double compute_scalar();
+  ~FixPythonInvoke() override;
+  int setmask() override;
+  void end_of_step() override;
+  void post_force(int) override;
 
  private:
   void *lmpPtr;
   void *pFunc;
   int selected_callback;
-  double py_energy; //RS external energy returned by python callback (post_force only!)
 };
 
 }    // namespace LAMMPS_NS
 
 #endif
 #endif
-
-/* ERROR/WARNING messages:
-
-E: Illegal ... command
-
-Self-explanatory.  Check the input script syntax and compare to the
-documentation for the command.  You can use -echo screen as a
-command-line option when running LAMMPS to see the offending line.
-
-E: Unsupported callback name for fix python/invoke
-
-UNDOCUMENTED
-
-E: Could not initialize embedded Python
-
-UNDOCUMENTED
-
-E: Could not find Python function
-
-UNDOCUMENTED
-
-*/
