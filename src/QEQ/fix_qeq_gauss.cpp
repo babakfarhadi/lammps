@@ -52,6 +52,7 @@ using namespace MathConst;
 
 static constexpr double EV_TO_KCAL_PER_MOL = 14.4;
 static constexpr double SMALL = 1.0e-14;
+static constexpr double QSUMSMALL = 0.00001;
 
 /* ---------------------------------------------------------------------- */
 
@@ -91,7 +92,7 @@ FixQEqGauss::FixQEqGauss(LAMMPS *lmp, int narg, char **arg) :
   }
 
   nn = n_cap = 0;
-  NN = nmax = 0;
+  nmax = 0;
   m_fill = m_cap = 0;
   pack_flag = 0;
   s = nullptr;
@@ -152,7 +153,7 @@ FixQEqGauss::~FixQEqGauss()
   memory->destroy(t_hist);
 
   FixQEqGauss::deallocate_storage();
-  deallocate_matrix();
+  FixQEqGauss::deallocate_matrix();
 
   memory->destroy(chi);
   memory->destroy(eta);
@@ -290,7 +291,7 @@ void FixQEqGauss::reallocate_storage()
 
 void FixQEqGauss::allocate_matrix()
 {
-  int i,ii,n,m;
+  int i,ii,m;
 
   int mincap;
   double safezone;
@@ -298,8 +299,7 @@ void FixQEqGauss::allocate_matrix()
   mincap = MIN_CAP;
   safezone = SAFE_ZONE;
 
-  n = atom->nlocal;
-  n_cap = MAX((int)(n * safezone), mincap);
+  n_cap = MAX((int)(atom->nlocal * safezone), mincap);
 
   // determine the total space for the H matrix
 
@@ -346,11 +346,23 @@ void FixQEqGauss::init()
   if (group->count(igroup) == 0)
     error->all(FLERR,"Fix {} group has no atoms", style);
 
+  // compute net charge and print warning if too large
+
+  double qsum_local = 0.0, qsum = 0.0;
+  for (int i = 0; i < atom->nlocal; i++) {
+    if (atom->mask[i] & groupbit)
+      qsum_local += atom->q[i];
+  }
+  MPI_Allreduce(&qsum_local,&qsum,1,MPI_DOUBLE,MPI_SUM,world);
+
+  if ((comm->me == 0) && (fabs(qsum) > QSUMSMALL))
+    error->warning(FLERR,"Fix {} group is not charge neutral, net charge = {:.8}", style, qsum);
+
   // get pointer to fix efield if present. there may be at most one instance of fix efield in use.
 
   efield = nullptr;
   auto fixes = modify->get_fix_by_style("^efield");
-  if (fixes.size() == 1) efield = (FixEfield *) fixes.front();
+  if (fixes.size() == 1) efield = dynamic_cast<FixEfield *>( fixes.front());
   else if (fixes.size() > 1)
     error->all(FLERR, "There may be only one fix efield instance used with fix {}", style);
 
@@ -369,17 +381,13 @@ void FixQEqGauss::init()
                        "boundary when using charge equilibration with ReaxFF.");
   }
 
-  // we need a half neighbor list w/ Newton off and ghost neighbors
+  // we need a half neighbor list w/ Newton off
   // built whenever re-neighboring occurs
 
-  int irequest = neighbor->request(this,instance_me);
-  neighbor->requests[irequest]->pair = 0;
-  neighbor->requests[irequest]->fix = 1;
-  neighbor->requests[irequest]->newton = 2;
-  neighbor->requests[irequest]->ghost = 1;
+  neighbor->add_request(this, NeighConst::REQ_NEWTON_OFF);
 
   if (utils::strmatch(update->integrate_style,"^respa"))
-    nlevels_respa = ((Respa *) update->integrate)->nlevels;
+    nlevels_respa = (dynamic_cast<Respa *>( update->integrate))->nlevels;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -401,7 +409,6 @@ void FixQEqGauss::init_list(int /*id*/, NeighList *ptr)
 void FixQEqGauss::setup_pre_force(int vflag)
 {
   nn = list->inum;
-  NN = list->inum + list->gnum;
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
@@ -438,7 +445,7 @@ void FixQEqGauss::init_storage()
 {
   if (efield) get_chi_field();
 
-  for (int ii = 0; ii < NN; ii++) {
+  for (int ii = 0; ii < nn; ii++) {
     int i = ilist[ii];
     if (atom->mask[i] & groupbit) {
       Hdia_inv[i] = 1. / eta[atom->type[i]];
@@ -461,7 +468,6 @@ void FixQEqGauss::pre_force(int /*vflag*/)
   int n = atom->nlocal;
 
   nn = list->inum;
-  NN = list->inum + list->gnum;
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
@@ -526,9 +532,9 @@ void FixQEqGauss::init_matvec()
   }
 
   pack_flag = 2;
-  comm->forward_comm_fix(this); //Dist_vector(s);
+  comm->forward_comm(this); //Dist_vector(s);
   pack_flag = 3;
-  comm->forward_comm_fix(this); //Dist_vector(t);
+  comm->forward_comm(this); //Dist_vector(t);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -538,7 +544,7 @@ void FixQEqGauss::compute_H()
   int jnum;
   int i, j, ii, jj, itype, jtype, flag;
   double dx, dy, dz, r_sqr, zei, zej;
-  const double SMALL = 0.0001;
+  constexpr double EPSILON = 0.0001;
 
   int *type = atom->type;
   tagint *tag = atom->tag;
@@ -575,10 +581,10 @@ void FixQEqGauss::compute_H()
           if (j < atom->nlocal) flag = 1;
           else if (tag[i] < tag[j]) flag = 1;
           else if (tag[i] == tag[j]) {
-            if (dz > SMALL) flag = 1;
-            else if (fabs(dz) < SMALL) {
-              if (dy > SMALL) flag = 1;
-              else if (fabs(dy) < SMALL && dx > SMALL)
+            if (dz > EPSILON) flag = 1;
+            else if (fabs(dz) < EPSILON) {
+              if (dy > EPSILON) flag = 1;
+              else if (fabs(dy) < EPSILON && dx > EPSILON)
                 flag = 1;
             }
           }
@@ -598,7 +604,6 @@ void FixQEqGauss::compute_H()
     error->all(FLERR,fmt::format("Fix qeq/reaxff H matrix size has been "
                                  "exceeded: m_fill={} H.m={}\n", m_fill, H.m));
 }
-
 
 /* ---------------------------------------------------------------------- */
 
@@ -675,7 +680,7 @@ int FixQEqGauss::CG(double *b, double *x)
 
   pack_flag = 1;
   sparse_matvec(&H, x, q);
-  comm->reverse_comm_fix(this); //Coll_Vector(q);
+  comm->reverse_comm(this); //Coll_Vector(q);
 
   vector_sum(r , 1.,  b, -1., q, nn);
 
@@ -689,9 +694,9 @@ int FixQEqGauss::CG(double *b, double *x)
   sig_new = parallel_dot(r, d, nn);
 
   for (i = 1; i < imax && sqrt(sig_new) / b_norm > tolerance; ++i) {
-    comm->forward_comm_fix(this); //Dist_vector(d);
+    comm->forward_comm(this); //Dist_vector(d);
     sparse_matvec(&H, d, q);
-    comm->reverse_comm_fix(this); //Coll_vector(q);
+    comm->reverse_comm(this); //Coll_vector(q);
 
     tmp = parallel_dot(d, q, nn);
     alpha = sig_new / tmp;
@@ -734,11 +739,10 @@ void FixQEqGauss::sparse_matvec(sparse_matrix *A, double *x, double *b)
       b[i] = eta[atom->type[i]] * x[i];
   }
 
-  for (ii = nn; ii < NN; ++ii) {
-    i = ilist[ii];
-    if (atom->mask[i] & groupbit)
+  int nall = atom->nlocal + atom->nghost;
+  for (i = atom->nlocal; i < nall; ++i)
       b[i] = 0;
-  }
+
   for (ii = 0; ii < nn; ++ii) {
     i = ilist[ii];
     if (atom->mask[i] & groupbit) {
@@ -782,7 +786,7 @@ void FixQEqGauss::calculate_Q()
   }
 
   pack_flag = 4;
-  comm->forward_comm_fix(this); //Dist_vector(atom->q);
+  comm->forward_comm(this); //Dist_vector(atom->q);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1034,10 +1038,10 @@ void FixQEqGauss::vector_add(double* dest, double c, double* v, int k)
 
 void FixQEqGauss::get_chi_field()
 {
-  memset(&chi_field[0],0.0,atom->nmax*sizeof(double));
+  memset(&chi_field[0],0,atom->nmax*sizeof(double));
   if (!efield) return;
 
-  const double * const *x = (const double * const *)atom->x;
+  const auto x = (const double * const *)atom->x;
   const int *mask = atom->mask;
   const imageint *image = atom->image;
   const int nlocal = atom->nlocal;
@@ -1045,11 +1049,8 @@ void FixQEqGauss::get_chi_field()
 
   // update electric field region if necessary
 
-  Region *region = nullptr;
-  if (efield->iregion >= 0) {
-    region = domain->regions[efield->iregion];
-    region->prematch();
-  }
+  Region *region = efield->region;
+  if (region) region->prematch();
 
   // efield energy is in real units of kcal/mol/angstrom, need to convert to eV
 

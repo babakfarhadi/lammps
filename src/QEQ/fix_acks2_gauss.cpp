@@ -85,8 +85,8 @@ FixACKS2Gauss::~FixACKS2Gauss()
   memory->destroy(s_hist_X);
   memory->destroy(s_hist_last);
 
-  deallocate_storage();
-  deallocate_matrix();
+  FixACKS2Gauss::deallocate_storage();
+  FixACKS2Gauss::deallocate_matrix();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -184,7 +184,8 @@ void FixACKS2Gauss::pertype_parameters(char *arg)
 void FixACKS2Gauss::allocate_storage()
 {
   nmax = atom->nmax;
-  int size = nmax*2 + 2;
+  NN = atom->nlocal + atom->nghost;
+  const int size = nmax*2 + 2;
 
   // 0 to nn-1: owned atoms related to H matrix
   // nn to NN-1: ghost atoms related to H matrix
@@ -211,7 +212,6 @@ void FixACKS2Gauss::allocate_storage()
   memory->create(r_hat,size,"acks2:r_hat");
   memory->create(y,size,"acks2:y");
   memory->create(z,size,"acks2:z");
-
   memory->create(u,size,"acks2:u");
 }
 
@@ -293,10 +293,9 @@ void FixACKS2Gauss::pre_force(int /*vflag*/)
 {
   if (update->ntimestep % nevery) return;
 
-  int n = atom->nlocal;
+  NN = atom->nlocal + atom->nghost;
 
   nn = list->inum;
-  NN = list->inum + list->gnum;
   ilist = list->ilist;
   numneigh = list->numneigh;
   firstneigh = list->firstneigh;
@@ -305,7 +304,7 @@ void FixACKS2Gauss::pre_force(int /*vflag*/)
   // need to be atom->nmax in length
 
   if (atom->nmax > nmax) reallocate_storage();
-  if (n > n_cap*DANGER_ZONE || m_fill > m_cap*DANGER_ZONE)
+  if (atom->nlocal > n_cap*DANGER_ZONE || m_fill > m_cap*DANGER_ZONE)
     reallocate_matrix();
 
   if (efield) get_chi_field();
@@ -327,7 +326,7 @@ void FixACKS2Gauss::init_matvec()
   /* fill-in X matrix */
   compute_X();
   pack_flag = 4;
-  comm->reverse_comm_fix(this); //Coll_Vector(X_diag);
+  comm->reverse_comm(this); //Coll_Vector(X_diag);
 
   int ii, i;
 
@@ -361,7 +360,7 @@ void FixACKS2Gauss::init_matvec()
   }
 
   pack_flag = 2;
-  comm->forward_comm_fix(this); //Dist_vector(s);
+  comm->forward_comm(this); //Dist_vector(s);
   more_forward_comm(s);
 }
 
@@ -380,7 +379,7 @@ void FixACKS2Gauss::compute_X()
   double **x = atom->x;
   int *mask = atom->mask;
 
-  memset(X_diag,0.0,atom->nmax*sizeof(double));
+  memset(X_diag,0,atom->nmax*sizeof(double));
 
   // fill in the X matrix
   m_fill = 0;
@@ -436,7 +435,6 @@ void FixACKS2Gauss::compute_X()
             X.val[m_fill] = X_val;
             X_diag[i] -= X_val;
             X_diag[j] -= X_val;
-
             m_fill++;
           }
         }
@@ -474,7 +472,7 @@ int FixACKS2Gauss::BiCGStab(double *b, double *x)
 
   sparse_matvec_acks2(&H, &X, x, d);
   pack_flag = 1;
-  comm->reverse_comm_fix(this); //Coll_Vector(d);
+  comm->reverse_comm(this); //Coll_Vector(d);
   more_reverse_comm(d);
 
   vector_sum(r , 1.,  b, -1., d, nn);
@@ -513,11 +511,11 @@ int FixACKS2Gauss::BiCGStab(double *b, double *x)
     }
 
     pack_flag = 1;
-    comm->forward_comm_fix(this); //Dist_vector(d);
+    comm->forward_comm(this); //Dist_vector(d);
     more_forward_comm(d);
     sparse_matvec_acks2(&H, &X, d, z);
     pack_flag = 2;
-    comm->reverse_comm_fix(this); //Coll_vector(z);
+    comm->reverse_comm(this); //Coll_vector(z);
     more_reverse_comm(z);
 
     tmp = parallel_dot(r_hat, z, nn);
@@ -548,11 +546,11 @@ int FixACKS2Gauss::BiCGStab(double *b, double *x)
     }
 
     pack_flag = 3;
-    comm->forward_comm_fix(this); //Dist_vector(q_hat);
+    comm->forward_comm(this); //Dist_vector(q_hat);
     more_forward_comm(q_hat);
     sparse_matvec_acks2(&H, &X, q_hat, y);
     pack_flag = 3;
-    comm->reverse_comm_fix(this); //Dist_vector(y);
+    comm->reverse_comm(this); //Dist_vector(y);
     more_reverse_comm(y);
 
     sigma = parallel_dot(y, q, nn);
@@ -596,8 +594,7 @@ void FixACKS2Gauss::sparse_matvec_acks2(sparse_matrix *H, sparse_matrix *X, doub
     }
   }
 
-  for (ii = nn; ii < NN; ++ii) {
-    i = ilist[ii];
+  for (i = atom->nlocal; i < NN; ++i) {
     if (atom->mask[i] & groupbit) {
       b[i] = 0;
       b[NN + i] = 0;
@@ -606,6 +603,7 @@ void FixACKS2Gauss::sparse_matvec_acks2(sparse_matrix *H, sparse_matrix *X, doub
   // last two rows
   b[2*NN] = 0;
   b[2*NN + 1] = 0;
+
   for (ii = 0; ii < nn; ++ii) {
     i = ilist[ii];
     if (atom->mask[i] & groupbit) {
@@ -643,39 +641,34 @@ void FixACKS2Gauss::sparse_matvec_acks2(sparse_matrix *H, sparse_matrix *X, doub
 
 void FixACKS2Gauss::calculate_Q()
 {
-  int i, k;
+  pack_flag = 2;
+  comm->forward_comm(this); //Dist_vector(s);
 
-  for (int ii = 0; ii < nn; ++ii) {
-    i = ilist[ii];
+  for (int i = 0; i < NN; ++i) {
     if (atom->mask[i] & groupbit) {
 
-      /* backup s */
-      for (k = nprev-1; k > 0; --k) {
-        s_hist[i][k] = s_hist[i][k-1];
-        s_hist_X[i][k] = s_hist_X[i][k-1];
+      atom->q[i] = s[i];
+      u[i] = -s[NN+i];
+
+      if (i < atom->nlocal) {
+
+        /* backup s */
+        for (int k = nprev-1; k > 0; --k) {
+          s_hist[i][k] = s_hist[i][k-1];
+          s_hist_X[i][k] = s_hist_X[i][k-1];
+        }
+        s_hist[i][0] = s[i];
+        s_hist_X[i][0] = s[NN+i];
       }
-      s_hist[i][0] = s[i];
-      s_hist_X[i][0] = s[NN+i];
     }
   }
   // last two rows
   if (last_rows_flag) {
     for (int i = 0; i < 2; ++i) {
-      for (k = nprev-1; k > 0; --k)
+      for (int k = nprev-1; k > 0; --k)
         s_hist_last[i][k] = s_hist_last[i][k-1];
       s_hist_last[i][0] = s[2*NN+i];
     }
-  }
-
-  pack_flag = 2;
-  comm->forward_comm_fix(this); //Dist_vector(s);
-
-  for (int ii = 0; ii < NN; ++ii) {
-    i = ilist[ii];
-    if (atom->mask[i] & groupbit)
-      atom->q[i] = s[i];
-      //BABAK: CHECK SIGN HERE!
-      u[i] = -s[NN+i];
   }
 }
 

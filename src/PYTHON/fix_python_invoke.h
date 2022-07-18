@@ -32,11 +32,15 @@ class FixPythonInvoke : public Fix {
   int setmask() override;
   void end_of_step() override;
   void post_force(int) override;
+  void min_setup(int);
+  void min_post_force(int);
+  double compute_scalar();
 
  private:
   void *lmpPtr;
   void *pFunc;
   int selected_callback;
+  double py_energy; //RS external energy returned by python callback (post_force only!)
 };
 
 }    // namespace LAMMPS_NS
